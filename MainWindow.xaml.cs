@@ -4,6 +4,8 @@
 // </copyright>
 //------------------------------------------------------------------------------
 
+using System.Reflection;
+
 namespace Microsoft.Samples.Kinect.BodyBasics
 {
     using System;
@@ -126,6 +128,25 @@ namespace Microsoft.Samples.Kinect.BodyBasics
         /// Current status text to display
         /// </summary>
         private string statusText = null;
+        
+        
+        /// <summary>
+        /// Recording on/off
+        /// </summary>
+        private bool isRecording = false;
+        
+        /// <summary>
+        /// List of Body Frames from recording
+        /// </summary>
+        
+        private List<Body[]> recordedFrames = new List<Body[]>();
+        
+        /// <summary>
+        /// Limit of recorded frames
+        /// </summary>
+        
+        private int maxFramesToRecord = 300; // Example: record up to 300 frames
+
 
         /// <summary>
         /// Initializes a new instance of the MainWindow class.
@@ -292,6 +313,87 @@ namespace Microsoft.Samples.Kinect.BodyBasics
                 this.kinectSensor = null;
             }
         }
+        public void StartRecording()
+        {
+            isRecording = true;
+            recordedFrames.Clear(); // Clear any previous recordings
+        }
+
+        public void StopRecording()
+        {
+            isRecording = false;
+            // Process or save the recordedFrames as needed
+        }
+
+        public List<Body[]> GetRecordedFrames()
+        {
+            return recordedFrames;
+        }
+        
+        
+        //
+         public static Body DeepClone(Body body)
+            {
+                if (body == null)
+                {
+                    throw new ArgumentNullException(nameof(body), "The body to clone cannot be null.");
+                }
+
+                // Użycie refleksji do utworzenia instancji Body
+                Body clone = (Body)Activator.CreateInstance(typeof(Body), true);
+
+                // Ustawianie właściwości podstawowych
+                SetProperty(clone, "IsTracked", body.IsTracked);
+                SetProperty(clone, "TrackingId", body.TrackingId);
+                SetProperty(clone, "HandLeftState", body.HandLeftState);
+                SetProperty(clone, "HandRightState", body.HandRightState);
+                SetProperty(clone, "ClippedEdges", body.ClippedEdges);
+
+                // Klonowanie Jointów
+                var joints = new Dictionary<JointType, Joint>();
+                foreach (var joint in body.Joints)
+                {
+                    joints[joint.Key] = new Joint
+                    {
+                        Position = new CameraSpacePoint
+                        {
+                            X = joint.Value.Position.X,
+                            Y = joint.Value.Position.Y,
+                            Z = joint.Value.Position.Z
+                        },
+                        TrackingState = joint.Value.TrackingState
+                    };
+                }
+                SetProperty(clone, "Joints", joints);
+
+                // Klonowanie JointOrientations
+                var jointOrientations = new Dictionary<JointType, JointOrientation>();
+                foreach (var orientation in body.JointOrientations)
+                {
+                    jointOrientations[orientation.Key] = new JointOrientation
+                    {
+                        Orientation = new Vector4
+                        {
+                            X = orientation.Value.Orientation.X,
+                            Y = orientation.Value.Orientation.Y,
+                            Z = orientation.Value.Orientation.Z,
+                            W = orientation.Value.Orientation.W
+                        }
+                    };
+                }
+                SetProperty(clone, "JointOrientations", jointOrientations);
+
+                return clone;
+            }
+
+        private static void SetProperty<T>(T instance, string propertyName, object value)
+        {
+            var property = typeof(T).GetProperty(propertyName, BindingFlags.NonPublic | BindingFlags.Instance);
+            if (property != null)
+            {
+                property.SetValue(instance, value);
+            }
+        }
 
         /// <summary>
         /// Handles the body frame data arriving from the sensor
@@ -311,11 +413,30 @@ namespace Microsoft.Samples.Kinect.BodyBasics
                         this.bodies = new Body[bodyFrame.BodyCount];
                     }
 
-                    // The first time GetAndRefreshBodyData is called, Kinect will allocate each Body in the array.
-                    // As long as those body objects are not disposed and not set to null in the array,
-                    // those body objects will be re-used.
                     bodyFrame.GetAndRefreshBodyData(this.bodies);
                     dataReceived = true;
+
+                   
+                    if (isRecording)
+                    {
+                        // Deep copy the bodies array to avoid reference issues
+                        Body[] bodiesCopy = new Body[this.bodies.Length];
+                        for (int i = 0; i < this.bodies.Length; i++)
+                        {
+                            if (this.bodies[i] != null)
+                            {
+                                bodiesCopy[i] = MainWindow.DeepClone(this.bodies[i]); // Poprawne wywołanie metody DeepClone
+                            }
+                        }
+
+                        recordedFrames.Add(bodiesCopy);
+
+                        // Stop recording if the maximum number of frames is reached
+                        if (recordedFrames.Count >= maxFramesToRecord)
+                        {
+                            StopRecording();
+                        }
+                    }
                 }
             }
 
@@ -323,7 +444,6 @@ namespace Microsoft.Samples.Kinect.BodyBasics
             {
                 using (DrawingContext dc = this.drawingGroup.Open())
                 {
-                    // Draw a transparent background to set the render size
                     dc.DrawRectangle(Brushes.Black, null, new Rect(0.0, 0.0, this.displayWidth, this.displayHeight));
 
                     int penIndex = 0;
@@ -337,13 +457,10 @@ namespace Microsoft.Samples.Kinect.BodyBasics
 
                             IReadOnlyDictionary<JointType, Joint> joints = body.Joints;
 
-                            // convert the joint points to depth (display) space
                             Dictionary<JointType, Point> jointPoints = new Dictionary<JointType, Point>();
 
                             foreach (JointType jointType in joints.Keys)
                             {
-                                // sometimes the depth(Z) of an inferred joint may show as negative
-                                // clamp down to 0.1f to prevent coordinatemapper from returning (-Infinity, -Infinity)
                                 CameraSpacePoint position = joints[jointType].Position;
                                 if (position.Z < 0)
                                 {
@@ -361,7 +478,6 @@ namespace Microsoft.Samples.Kinect.BodyBasics
                         }
                     }
 
-                    // prevent drawing outside of our render area
                     this.drawingGroup.ClipGeometry = new RectangleGeometry(new Rect(0.0, 0.0, this.displayWidth, this.displayHeight));
                 }
             }
