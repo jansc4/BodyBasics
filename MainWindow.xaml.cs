@@ -5,6 +5,7 @@
 //------------------------------------------------------------------------------
 
 using System.Reflection;
+using System.Threading.Tasks;
 
 namespace Microsoft.Samples.Kinect.BodyBasics
 {
@@ -103,6 +104,10 @@ namespace Microsoft.Samples.Kinect.BodyBasics
         /// Array for the bodies
         /// </summary>
         private Body[] bodies = null;
+        /// <summary>
+        /// Array for the bodies
+        /// </summary>
+        private Body[] bodiesCopy = null;
 
         /// <summary>
         /// definition of bones
@@ -141,11 +146,11 @@ namespace Microsoft.Samples.Kinect.BodyBasics
         
         private List<Body[]> recordedFrames = new List<Body[]>();
         
-        /// <summary>
-        /// Limit of recorded frames
-        /// </summary>
+       /// <summary>
+       /// Joints recorded info file
+       /// </summary>
         
-        private int maxFramesToRecord = 300; // Example: record up to 300 frames
+        private string outputFilePath = "recordedJoints.csv";
 
 
         /// <summary>
@@ -313,17 +318,43 @@ namespace Microsoft.Samples.Kinect.BodyBasics
                 this.kinectSensor = null;
             }
         }
-        public void StartRecording()
+        private async void StartRecordingButton_Click(object sender, RoutedEventArgs e)
         {
+            for (int i = 5; i > 0; i--)
+            {
+                StatusText = $"Recording will start in {i} seconds";
+                await Task.Delay(1000);
+            }
+    
+            StatusText = "Recording started!";
             isRecording = true;
-            recordedFrames.Clear(); // Clear any previous recordings
+    
+            // Zakładamy, że nagrywanie będzie trwało przez określony czas, np. 10 sekund
+            await Task.Delay(5000);  // Czas nagrywania w milisekundach (10 sekund)
+    
+            isRecording = false;
+            StatusText = "Recording stopped!";
         }
 
-        public void StopRecording()
+
+        // Metoda obsługująca kliknięcie przycisku "Stop Recording"
+        private void StopRecordingButton_Click(object sender, RoutedEventArgs e)
         {
             isRecording = false;
-            // Process or save the recordedFrames as needed
+            StatusText = "Recording stopped!";
+
+            // Dodaj kod do zapisu nagranych klatek lub ich przetworzenia
+            // if (recordedFrames.Count > 0)
+            // {
+            //     // Przykładowe zachowanie: zapisanie liczby nagranych klatek
+            //     MessageBox.Show($"Recorded frames: {recordedFrames.Count}");
+            // }
+            // else
+            // {
+            //     MessageBox.Show("No frames recorded.");
+            // }
         }
+
 
         public List<Body[]> GetRecordedFrames()
         {
@@ -332,69 +363,93 @@ namespace Microsoft.Samples.Kinect.BodyBasics
         
         
         //
-         public static Body DeepClone(Body body)
-            {
-                if (body == null)
-                {
-                    throw new ArgumentNullException(nameof(body), "The body to clone cannot be null.");
-                }
-
-                // Użycie refleksji do utworzenia instancji Body
-                Body clone = (Body)Activator.CreateInstance(typeof(Body), true);
-
-                // Ustawianie właściwości podstawowych
-                SetProperty(clone, "IsTracked", body.IsTracked);
-                SetProperty(clone, "TrackingId", body.TrackingId);
-                SetProperty(clone, "HandLeftState", body.HandLeftState);
-                SetProperty(clone, "HandRightState", body.HandRightState);
-                SetProperty(clone, "ClippedEdges", body.ClippedEdges);
-
-                // Klonowanie Jointów
-                var joints = new Dictionary<JointType, Joint>();
+        //  public static Body DeepClone(Body body)
+        //     {
+        //         if (body == null)
+        //         {
+        //             throw new ArgumentNullException(nameof(body), "The body to clone cannot be null.");
+        //         }
+        //
+        //         // Użycie refleksji do utworzenia instancji Body
+        //         Body clone = (Body)Activator.CreateInstance(typeof(Body), true);
+        //
+        //         // Ustawianie właściwości podstawowych
+        //         SetProperty(clone, "IsTracked", body.IsTracked);
+        //         SetProperty(clone, "TrackingId", body.TrackingId);
+        //         SetProperty(clone, "HandLeftState", body.HandLeftState);
+        //         SetProperty(clone, "HandRightState", body.HandRightState);
+        //         SetProperty(clone, "ClippedEdges", body.ClippedEdges);
+        //
+        //         // Klonowanie Jointów
+        //         var joints = new Dictionary<JointType, Joint>();
+        //         foreach (var joint in body.Joints)
+        //         {
+        //             joints[joint.Key] = new Joint
+        //             {
+        //                 Position = new CameraSpacePoint
+        //                 {
+        //                     X = joint.Value.Position.X,
+        //                     Y = joint.Value.Position.Y,
+        //                     Z = joint.Value.Position.Z
+        //                 },
+        //                 TrackingState = joint.Value.TrackingState
+        //             };
+        //         }
+        //         SetProperty(clone, "Joints", joints);
+        //
+        //         // Klonowanie JointOrientations
+        //         var jointOrientations = new Dictionary<JointType, JointOrientation>();
+        //         foreach (var orientation in body.JointOrientations)
+        //         {
+        //             jointOrientations[orientation.Key] = new JointOrientation
+        //             {
+        //                 Orientation = new Vector4
+        //                 {
+        //                     X = orientation.Value.Orientation.X,
+        //                     Y = orientation.Value.Orientation.Y,
+        //                     Z = orientation.Value.Orientation.Z,
+        //                     W = orientation.Value.Orientation.W
+        //                 }
+        //             };
+        //         }
+        //         SetProperty(clone, "JointOrientations", jointOrientations);
+        //
+        //         return clone;
+        //     }
+        //
+        // private static void SetProperty<T>(T instance, string propertyName, object value)
+        // {
+        //     var property = typeof(T).GetProperty(propertyName, BindingFlags.NonPublic | BindingFlags.Instance);
+        //     if (property != null)
+        //     {
+        //         property.SetValue(instance, value);
+        //     }
+        // }
+        /// <summary>
+        /// Save joints information to csv file
+        /// </summary>
+        /// <param name="body"></param>
+        private void SaveJointDataToFile(Body body)
+        {
+            using (StreamWriter sw = new StreamWriter(outputFilePath, true))
+            {   
                 foreach (var joint in body.Joints)
                 {
-                    joints[joint.Key] = new Joint
+                    if (joint.Key == JointType.ElbowRight || 
+                           joint.Key == JointType.HandRight || 
+                           joint.Key == JointType.ShoulderRight || 
+                           joint.Key == JointType.ThumbRight || 
+                           joint.Key == JointType.WristRight || 
+                           joint.Key == JointType.HandTipRight)
                     {
-                        Position = new CameraSpacePoint
-                        {
-                            X = joint.Value.Position.X,
-                            Y = joint.Value.Position.Y,
-                            Z = joint.Value.Position.Z
-                        },
-                        TrackingState = joint.Value.TrackingState
-                    };
+                        CameraSpacePoint position = joint.Value.Position;
+                        string line = string.Format("{0},{1},{2},{3}", joint.Key, position.X, position.Y, position.Z);
+                        sw.WriteLine(line);
+                    }
+                    
                 }
-                SetProperty(clone, "Joints", joints);
-
-                // Klonowanie JointOrientations
-                var jointOrientations = new Dictionary<JointType, JointOrientation>();
-                foreach (var orientation in body.JointOrientations)
-                {
-                    jointOrientations[orientation.Key] = new JointOrientation
-                    {
-                        Orientation = new Vector4
-                        {
-                            X = orientation.Value.Orientation.X,
-                            Y = orientation.Value.Orientation.Y,
-                            Z = orientation.Value.Orientation.Z,
-                            W = orientation.Value.Orientation.W
-                        }
-                    };
-                }
-                SetProperty(clone, "JointOrientations", jointOrientations);
-
-                return clone;
-            }
-
-        private static void SetProperty<T>(T instance, string propertyName, object value)
-        {
-            var property = typeof(T).GetProperty(propertyName, BindingFlags.NonPublic | BindingFlags.Instance);
-            if (property != null)
-            {
-                property.SetValue(instance, value);
             }
         }
-
         /// <summary>
         /// Handles the body frame data arriving from the sensor
         /// </summary>
@@ -416,26 +471,33 @@ namespace Microsoft.Samples.Kinect.BodyBasics
                     bodyFrame.GetAndRefreshBodyData(this.bodies);
                     dataReceived = true;
 
-                   
                     if (isRecording)
                     {
-                        // Deep copy the bodies array to avoid reference issues
-                        Body[] bodiesCopy = new Body[this.bodies.Length];
-                        for (int i = 0; i < this.bodies.Length; i++)
+                        foreach (Body body in this.bodies)
                         {
-                            if (this.bodies[i] != null)
+                            if (body != null && body.IsTracked)
                             {
-                                bodiesCopy[i] = MainWindow.DeepClone(this.bodies[i]); // Poprawne wywołanie metody DeepClone
+                                
+                                
+                                SaveJointDataToFile(body);
                             }
                         }
+                        
+                        // for (int i = 0; i < this.bodies.Length; i++)
+                        // {
+                        //     if (this.bodies[i] != null)
+                        //     {
+                        //         bodiesCopy[i] = MainWindow.DeepClone(this.bodies[i]); // Poprawne wywołanie metody DeepClone
+                        //     }
+                        // }
+                        //
+                        // recordedFrames.Add(bodiesCopy);
 
-                        recordedFrames.Add(bodiesCopy);
-
-                        // Stop recording if the maximum number of frames is reached
-                        if (recordedFrames.Count >= maxFramesToRecord)
-                        {
-                            StopRecording();
-                        }
+                        // // Stop recording if the maximum number of frames is reached
+                        // if (recordedFrames.Count >= maxFramesToRecord)
+                        // {
+                        //     StopRecording();
+                        // }
                     }
                 }
             }
