@@ -141,6 +141,11 @@ namespace Microsoft.Samples.Kinect.BodyBasics
         private bool isRecording = false;
         
         /// <summary>
+        /// Exercise on/off
+        /// </summary>
+        private bool isExercise = false;
+        
+        /// <summary>
         /// List of Body Frames from recording
         /// </summary>
         
@@ -354,77 +359,122 @@ namespace Microsoft.Samples.Kinect.BodyBasics
             //     MessageBox.Show("No frames recorded.");
             // }
         }
-
-
-        public List<Body[]> GetRecordedFrames()
+        private async void StartExerciseButton_Click(object sender, RoutedEventArgs e)
         {
-            return recordedFrames;
+            for (int i = 5; i > 0; i--)
+            {
+                StatusText = $"Exercise will start in {i} seconds";
+                await Task.Delay(1000);
+            }
+            isExercise = true;
+            StatusText = "Exercise started";
         }
-        
-        
-        //
-        //  public static Body DeepClone(Body body)
-        //     {
-        //         if (body == null)
-        //         {
-        //             throw new ArgumentNullException(nameof(body), "The body to clone cannot be null.");
-        //         }
-        //
-        //         // Użycie refleksji do utworzenia instancji Body
-        //         Body clone = (Body)Activator.CreateInstance(typeof(Body), true);
-        //
-        //         // Ustawianie właściwości podstawowych
-        //         SetProperty(clone, "IsTracked", body.IsTracked);
-        //         SetProperty(clone, "TrackingId", body.TrackingId);
-        //         SetProperty(clone, "HandLeftState", body.HandLeftState);
-        //         SetProperty(clone, "HandRightState", body.HandRightState);
-        //         SetProperty(clone, "ClippedEdges", body.ClippedEdges);
-        //
-        //         // Klonowanie Jointów
-        //         var joints = new Dictionary<JointType, Joint>();
-        //         foreach (var joint in body.Joints)
-        //         {
-        //             joints[joint.Key] = new Joint
-        //             {
-        //                 Position = new CameraSpacePoint
-        //                 {
-        //                     X = joint.Value.Position.X,
-        //                     Y = joint.Value.Position.Y,
-        //                     Z = joint.Value.Position.Z
-        //                 },
-        //                 TrackingState = joint.Value.TrackingState
-        //             };
-        //         }
-        //         SetProperty(clone, "Joints", joints);
-        //
-        //         // Klonowanie JointOrientations
-        //         var jointOrientations = new Dictionary<JointType, JointOrientation>();
-        //         foreach (var orientation in body.JointOrientations)
-        //         {
-        //             jointOrientations[orientation.Key] = new JointOrientation
-        //             {
-        //                 Orientation = new Vector4
-        //                 {
-        //                     X = orientation.Value.Orientation.X,
-        //                     Y = orientation.Value.Orientation.Y,
-        //                     Z = orientation.Value.Orientation.Z,
-        //                     W = orientation.Value.Orientation.W
-        //                 }
-        //             };
-        //         }
-        //         SetProperty(clone, "JointOrientations", jointOrientations);
-        //
-        //         return clone;
-        //     }
-        //
-        // private static void SetProperty<T>(T instance, string propertyName, object value)
+        private void StopExerciseButton_Click(object sender, RoutedEventArgs e)
+        {
+            isExercise = false;
+            StatusText = "Exercise ended";
+        }
+
+        // public List<Body[]> GetRecordedFrames(string filePath)
         // {
-        //     var property = typeof(T).GetProperty(propertyName, BindingFlags.NonPublic | BindingFlags.Instance);
-        //     if (property != null)
+        //     List<Body[]> patternFrames = new List<Body[]>();
+        //     using (StreamReader sr = new StreamReader(filePath))
         //     {
-        //         property.SetValue(instance, value);
+        //         string line;
+        //         while ((line = sr.ReadLine()) != null && (line = sr.ReadLine() != "#")
+        //         {
+        //             string[] jointData = line.Split(';');
+        //             JointType jointType = (JointType)Enum.Parse(typeof(JointType), jointData[0]);
+        //             CameraSpacePoint position = new CameraSpacePoint
+        //             {
+        //                 X = float.Parse(jointData[1]),
+        //                 Y = float.Parse(jointData[2]),
+        //                 Z = float.Parse(jointData[3])
+        //             };
+        //         }
         //     }
+        //     
+        //
+        //
+        //
+        // return patternFrames;
+        //     
         // }
+        public List<MovementPatternFrame> GetRecordedFrames(string filePath)
+        {
+            List<MovementPatternFrame> patternFrames = new List<MovementPatternFrame>();
+
+            using (StreamReader sr = new StreamReader(filePath))
+            {
+                string line;
+                MovementPatternFrame currentFrame = new MovementPatternFrame();
+
+                while ((line = sr.ReadLine()) != null)
+                {
+                    if (line == "#")
+                    {
+                        // Add the current frame to the list
+                        patternFrames.Add(currentFrame);
+                
+                        // Create a new frame for the next data
+                        currentFrame = new MovementPatternFrame();
+                    }
+                    else
+                    {
+                        // Parse joint data
+                        string[] jointData = line.Split(';');
+                        JointType jointType = (JointType)Enum.Parse(typeof(JointType), jointData[0]);
+                        //string[] positionData = jointData[1].Split(',');
+                        CameraSpacePoint position = new CameraSpacePoint
+                        {
+                            X = float.Parse(jointData[1]),
+                            Y = float.Parse(jointData[2]),
+                            Z = float.Parse(jointData[3])
+                        };
+
+                        // Add the joint position to the current frame
+                        currentFrame.JointPositions.Add(jointType, position);
+                    }
+                }
+            }
+
+            return patternFrames;
+        }
+
+
+        
+        // private List<Body[]> LoadPatternData(string filePath)
+        // {
+        //     List<Body[]> patternFrames = new List<Body[]>();
+        //     using (StreamReader sr = new StreamReader(filePath))
+        //     {
+        //         string line;
+        //         while ((line = sr.ReadLine()) != null)
+        //         {
+        //             // Assuming each line in the CSV represents joint data for one frame
+        //             string[] parts = line.Split(',');
+        //             Body[] bodies = new Body[1]; // Assuming one body for simplicity
+        //             Body body = new Body();
+        //             bodies[0] = body;
+        //
+        //             foreach (string part in parts)
+        //             {
+        //                 string[] jointData = part.Split(' '); // Assuming space-separated joint data
+        //                 JointType jointType = (JointType)Enum.Parse(typeof(JointType), jointData[0]);
+        //                 CameraSpacePoint position = new CameraSpacePoint
+        //                 {
+        //                     X = float.Parse(jointData[1]),
+        //                     Y = float.Parse(jointData[2]),
+        //                     Z = float.Parse(jointData[3])
+        //                 };
+        //                 body.Joints[jointType] = new Joint { Position = position };
+        //             }
+        //             patternFrames.Add(bodies);
+        //         }
+        //     }
+        //     return patternFrames;
+        // }
+
         /// <summary>
         /// Save joints information to csv file
         /// </summary>
@@ -432,7 +482,8 @@ namespace Microsoft.Samples.Kinect.BodyBasics
         private void SaveJointDataToFile(Body body)
         {
             using (StreamWriter sw = new StreamWriter(outputFilePath, true))
-            {   
+            {
+                
                 foreach (var joint in body.Joints)
                 {
                     if (joint.Key == JointType.ElbowRight || 
@@ -443,11 +494,14 @@ namespace Microsoft.Samples.Kinect.BodyBasics
                            joint.Key == JointType.HandTipRight)
                     {
                         CameraSpacePoint position = joint.Value.Position;
-                        string line = string.Format("{0},{1},{2},{3}", joint.Key, position.X, position.Y, position.Z);
+                        string line = string.Format("{0};{1};{2};{3}", joint.Key, position.X, position.Y, position.Z);
                         sw.WriteLine(line);
+                        
                     }
                     
                 }
+                string separator = "#";
+                sw.WriteLine(separator);
             }
         }
         /// <summary>

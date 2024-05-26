@@ -6,9 +6,9 @@
         Loaded="MainWindow_Loaded"
         Closing="MainWindow_Closing"> 
   <Window.Resources>
-    <SolidColorBrush x:Key="MediumGreyBrush" Color="#ff6e6e6e" />
-    <SolidColorBrush x:Key="KinectPurpleBrush" Color="#ff52318f" />
-    <SolidColorBrush x:Key="KinectBlueBrush" Color="#ff00BCF2" />
+    <SolidColorBrush x:Key="MediumGreyBrush" Color="#1B1B1B" />
+    <SolidColorBrush x:Key="KinectPurpleBrush" Color="#B0650D" />
+    <SolidColorBrush x:Key="KinectBlueBrush" Color="#D17810" />
   </Window.Resources>
   <Grid Margin="10 0 10 0">
     <Grid.RowDefinitions>
@@ -26,7 +26,7 @@
       <Image Source="{Binding ImageSource}" Stretch="UniformToFill" />
     </Viewbox>
       
-    <StatusBar Grid.Row="2" HorizontalAlignment="Stretch" Name="statusBar" VerticalAlignment="Bottom" Background="White" Foreground="{StaticResource MediumGreyBrush}">
+    <StatusBar Grid.Row="2" HorizontalAlignment="Stretch" Name="statusBar" VerticalAlignment="Bottom" Background="#FFF4E8" Foreground="{StaticResource MediumGreyBrush}">
       <StatusBarItem Content="{Binding StatusText}" />
     </StatusBar>
     
@@ -34,7 +34,10 @@
     <Button Grid.Row="3" Name="StartRecordingButton" Content="Start Recording" HorizontalAlignment="Right" VerticalAlignment="Top" Width="120" Height="40" Click="StartRecordingButton_Click"/>
         
     <!-- Dodajemy przycisk do zatrzymywania nagrywania -->
-    <Button Grid.Row="3" Name="StopRecordingButton" Content="Stop Recording" HorizontalAlignment="Right" VerticalAlignment="Top" Width="120" Height="40" Click="StopRecordingButton_Click" Margin="0,50,0,0"/>
-
+    <Button Grid.Row="3" Name="StopRecordingButton" Content="Stop Recording" HorizontalAlignment="Right" VerticalAlignment="Top" Width="120" Height="40" Click="StopRecordingButton_Click" Margin="0,50,0,50"/>
+    
+    <Button Grid.Row="3" Name="StartExerciseButton" Content="Start Exercise" HorizontalAlignment="Center" VerticalAlignment="Top" Width="120" Height="40" Click="StartExerciseButton_Click" Margin="0,50,0,50"/>
+    
+    <Button Grid.Row="3" Name="StopExerciseButton" Content="Stop Exercise" HorizontalAlignment="Left" VerticalAlignment="Top" Width="120" Height="40" Click="StopExerciseButton_Click" Margin="0,50,0,50"/>
   </Grid>
 </Window>
