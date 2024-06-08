@@ -4,6 +4,9 @@
 // </copyright>
 //------------------------------------------------------------------------------
 
+using System.Reflection;
+using System.Threading.Tasks;
+
 namespace Microsoft.Samples.Kinect.BodyBasics
 {
     using System;
@@ -101,6 +104,10 @@ namespace Microsoft.Samples.Kinect.BodyBasics
         /// Array for the bodies
         /// </summary>
         private Body[] bodies = null;
+        /// <summary>
+        /// Array for the bodies
+        /// </summary>
+        private Body[] bodiesCopy = null;
 
         /// <summary>
         /// definition of bones
@@ -126,6 +133,30 @@ namespace Microsoft.Samples.Kinect.BodyBasics
         /// Current status text to display
         /// </summary>
         private string statusText = null;
+        
+        
+        /// <summary>
+        /// Recording on/off
+        /// </summary>
+        private bool isRecording = false;
+        
+        /// <summary>
+        /// Exercise on/off
+        /// </summary>
+        private bool isExercise = false;
+        
+        /// <summary>
+        /// List of Body Frames from recording
+        /// </summary>
+        
+        private List<Body[]> recordedFrames = new List<Body[]>();
+        
+       /// <summary>
+       /// Joints recorded info file
+       /// </summary>
+        
+        private string outputFilePath = "recordedJoints.csv";
+
 
         /// <summary>
         /// Initializes a new instance of the MainWindow class.
@@ -292,7 +323,187 @@ namespace Microsoft.Samples.Kinect.BodyBasics
                 this.kinectSensor = null;
             }
         }
+        private async void StartRecordingButton_Click(object sender, RoutedEventArgs e)
+        {
+            for (int i = 5; i > 0; i--)
+            {
+                StatusText = $"Recording will start in {i} seconds";
+                await Task.Delay(1000);
+            }
+    
+            StatusText = "Recording started!";
+            isRecording = true;
+    
+            // Zakładamy, że nagrywanie będzie trwało przez określony czas, np. 10 sekund
+            await Task.Delay(5000);  // Czas nagrywania w milisekundach (10 sekund)
+    
+            isRecording = false;
+            StatusText = "Recording stopped!";
+        }
 
+
+        // Metoda obsługująca kliknięcie przycisku "Stop Recording"
+        private void StopRecordingButton_Click(object sender, RoutedEventArgs e)
+        {
+            isRecording = false;
+            StatusText = "Recording stopped!";
+
+            // Dodaj kod do zapisu nagranych klatek lub ich przetworzenia
+            // if (recordedFrames.Count > 0)
+            // {
+            //     // Przykładowe zachowanie: zapisanie liczby nagranych klatek
+            //     MessageBox.Show($"Recorded frames: {recordedFrames.Count}");
+            // }
+            // else
+            // {
+            //     MessageBox.Show("No frames recorded.");
+            // }
+        }
+        private async void StartExerciseButton_Click(object sender, RoutedEventArgs e)
+        {
+            for (int i = 5; i > 0; i--)
+            {
+                StatusText = $"Exercise will start in {i} seconds";
+                await Task.Delay(1000);
+            }
+            isExercise = true;
+            StatusText = "Exercise started";
+        }
+        private void StopExerciseButton_Click(object sender, RoutedEventArgs e)
+        {
+            isExercise = false;
+            StatusText = "Exercise ended";
+        }
+
+        // public List<Body[]> GetRecordedFrames(string filePath)
+        // {
+        //     List<Body[]> patternFrames = new List<Body[]>();
+        //     using (StreamReader sr = new StreamReader(filePath))
+        //     {
+        //         string line;
+        //         while ((line = sr.ReadLine()) != null && (line = sr.ReadLine() != "#")
+        //         {
+        //             string[] jointData = line.Split(';');
+        //             JointType jointType = (JointType)Enum.Parse(typeof(JointType), jointData[0]);
+        //             CameraSpacePoint position = new CameraSpacePoint
+        //             {
+        //                 X = float.Parse(jointData[1]),
+        //                 Y = float.Parse(jointData[2]),
+        //                 Z = float.Parse(jointData[3])
+        //             };
+        //         }
+        //     }
+        //     
+        //
+        //
+        //
+        // return patternFrames;
+        //     
+        // }
+        public List<MovementPatternFrame> GetRecordedFrames(string filePath)
+        {
+            List<MovementPatternFrame> patternFrames = new List<MovementPatternFrame>();
+
+            using (StreamReader sr = new StreamReader(filePath))
+            {
+                string line;
+                MovementPatternFrame currentFrame = new MovementPatternFrame();
+
+                while ((line = sr.ReadLine()) != null)
+                {
+                    if (line == "#")
+                    {
+                        // Add the current frame to the list
+                        patternFrames.Add(currentFrame);
+                
+                        // Create a new frame for the next data
+                        currentFrame = new MovementPatternFrame();
+                    }
+                    else
+                    {
+                        // Parse joint data
+                        string[] jointData = line.Split(';');
+                        JointType jointType = (JointType)Enum.Parse(typeof(JointType), jointData[0]);
+                        //string[] positionData = jointData[1].Split(',');
+                        CameraSpacePoint position = new CameraSpacePoint
+                        {
+                            X = float.Parse(jointData[1]),
+                            Y = float.Parse(jointData[2]),
+                            Z = float.Parse(jointData[3])
+                        };
+
+                        // Add the joint position to the current frame
+                        currentFrame.JointPositions.Add(jointType, position);
+                    }
+                }
+            }
+
+            return patternFrames;
+        }
+
+
+        
+        // private List<Body[]> LoadPatternData(string filePath)
+        // {
+        //     List<Body[]> patternFrames = new List<Body[]>();
+        //     using (StreamReader sr = new StreamReader(filePath))
+        //     {
+        //         string line;
+        //         while ((line = sr.ReadLine()) != null)
+        //         {
+        //             // Assuming each line in the CSV represents joint data for one frame
+        //             string[] parts = line.Split(',');
+        //             Body[] bodies = new Body[1]; // Assuming one body for simplicity
+        //             Body body = new Body();
+        //             bodies[0] = body;
+        //
+        //             foreach (string part in parts)
+        //             {
+        //                 string[] jointData = part.Split(' '); // Assuming space-separated joint data
+        //                 JointType jointType = (JointType)Enum.Parse(typeof(JointType), jointData[0]);
+        //                 CameraSpacePoint position = new CameraSpacePoint
+        //                 {
+        //                     X = float.Parse(jointData[1]),
+        //                     Y = float.Parse(jointData[2]),
+        //                     Z = float.Parse(jointData[3])
+        //                 };
+        //                 body.Joints[jointType] = new Joint { Position = position };
+        //             }
+        //             patternFrames.Add(bodies);
+        //         }
+        //     }
+        //     return patternFrames;
+        // }
+
+        /// <summary>
+        /// Save joints information to csv file
+        /// </summary>
+        /// <param name="body"></param>
+        private void SaveJointDataToFile(Body body)
+        {
+            using (StreamWriter sw = new StreamWriter(outputFilePath, true))
+            {
+                
+                foreach (var joint in body.Joints)
+                {
+                    if (joint.Key == JointType.ElbowRight || 
+                           joint.Key == JointType.HandRight || 
+                           joint.Key == JointType.ShoulderRight || 
+                           joint.Key == JointType.ThumbRight || 
+                           joint.Key == JointType.WristRight || 
+                           joint.Key == JointType.HandTipRight)
+                    {
+                        CameraSpacePoint position = joint.Value.Position;
+                        string line = string.Format("{0};{1};{2};{3}", joint.Key, position.X, position.Y, position.Z);
+                        sw.WriteLine(line);
+                        
+                    }
+                    
+                }
+                string separator = "#";
+                sw.WriteLine(separator);
+            }
+        }
         /// <summary>
         /// Handles the body frame data arriving from the sensor
         /// </summary>
@@ -311,11 +522,37 @@ namespace Microsoft.Samples.Kinect.BodyBasics
                         this.bodies = new Body[bodyFrame.BodyCount];
                     }
 
-                    // The first time GetAndRefreshBodyData is called, Kinect will allocate each Body in the array.
-                    // As long as those body objects are not disposed and not set to null in the array,
-                    // those body objects will be re-used.
                     bodyFrame.GetAndRefreshBodyData(this.bodies);
                     dataReceived = true;
+
+                    if (isRecording)
+                    {
+                        foreach (Body body in this.bodies)
+                        {
+                            if (body != null && body.IsTracked)
+                            {
+                                
+                                
+                                SaveJointDataToFile(body);
+                            }
+                        }
+                        
+                        // for (int i = 0; i < this.bodies.Length; i++)
+                        // {
+                        //     if (this.bodies[i] != null)
+                        //     {
+                        //         bodiesCopy[i] = MainWindow.DeepClone(this.bodies[i]); // Poprawne wywołanie metody DeepClone
+                        //     }
+                        // }
+                        //
+                        // recordedFrames.Add(bodiesCopy);
+
+                        // // Stop recording if the maximum number of frames is reached
+                        // if (recordedFrames.Count >= maxFramesToRecord)
+                        // {
+                        //     StopRecording();
+                        // }
+                    }
                 }
             }
 
@@ -323,7 +560,6 @@ namespace Microsoft.Samples.Kinect.BodyBasics
             {
                 using (DrawingContext dc = this.drawingGroup.Open())
                 {
-                    // Draw a transparent background to set the render size
                     dc.DrawRectangle(Brushes.Black, null, new Rect(0.0, 0.0, this.displayWidth, this.displayHeight));
 
                     int penIndex = 0;
@@ -337,13 +573,10 @@ namespace Microsoft.Samples.Kinect.BodyBasics
 
                             IReadOnlyDictionary<JointType, Joint> joints = body.Joints;
 
-                            // convert the joint points to depth (display) space
                             Dictionary<JointType, Point> jointPoints = new Dictionary<JointType, Point>();
 
                             foreach (JointType jointType in joints.Keys)
                             {
-                                // sometimes the depth(Z) of an inferred joint may show as negative
-                                // clamp down to 0.1f to prevent coordinatemapper from returning (-Infinity, -Infinity)
                                 CameraSpacePoint position = joints[jointType].Position;
                                 if (position.Z < 0)
                                 {
@@ -361,7 +594,6 @@ namespace Microsoft.Samples.Kinect.BodyBasics
                         }
                     }
 
-                    // prevent drawing outside of our render area
                     this.drawingGroup.ClipGeometry = new RectangleGeometry(new Rect(0.0, 0.0, this.displayWidth, this.displayHeight));
                 }
             }

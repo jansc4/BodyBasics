@@ -3,8 +3,8 @@
 /workspace.xml
 # Rider ignored files
 /projectSettingsUpdater.xml
-/.idea.BodyBasics-WPF.iml
 /modules.xml
+/.idea.BodyBasics-WPF.iml
 /contentModel.xml
 # Editor-based HTTP Client requests
 /httpRequests/
