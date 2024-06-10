@@ -4,8 +4,11 @@
 // </copyright>
 //------------------------------------------------------------------------------
 
+using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
+using System.Windows.Documents;
+using System.Windows.Shapes;
 
 namespace Microsoft.Samples.Kinect.BodyBasics
 {
@@ -149,7 +152,7 @@ namespace Microsoft.Samples.Kinect.BodyBasics
         /// List of Body Frames from recording
         /// </summary>
         
-        private List<Body[]> recordedFrames = new List<Body[]>();
+        private List<MovementPatternFrame> recordedFrames = new List<MovementPatternFrame>();
         
        /// <summary>
        /// Joints recorded info file
@@ -157,6 +160,13 @@ namespace Microsoft.Samples.Kinect.BodyBasics
         
         private string outputFilePath = "recordedJoints.csv";
 
+        private DateTime exercicseStartTimestamp;
+        
+        private MovementPatternFrame closestPatternFrame;
+        
+        private List<string> validationResults = new List<string>();
+        
+        private int currentFrameIndex = 0;
 
         /// <summary>
         /// Initializes a new instance of the MainWindow class.
@@ -323,6 +333,11 @@ namespace Microsoft.Samples.Kinect.BodyBasics
                 this.kinectSensor = null;
             }
         }
+        /// <summary>
+        /// Start recording exercise movment pattern
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private async void StartRecordingButton_Click(object sender, RoutedEventArgs e)
         {
             for (int i = 5; i > 0; i--)
@@ -334,15 +349,19 @@ namespace Microsoft.Samples.Kinect.BodyBasics
             StatusText = "Recording started!";
             isRecording = true;
     
-            // Zakładamy, że nagrywanie będzie trwało przez określony czas, np. 10 sekund
-            await Task.Delay(5000);  // Czas nagrywania w milisekundach (10 sekund)
+            // Zakładamy, że nagrywanie będzie trwało przez określony czas
+            await Task.Delay(15000);  // Czas nagrywania w milisekundach (5 sekund)
     
             isRecording = false;
             StatusText = "Recording stopped!";
         }
 
 
-        // Metoda obsługująca kliknięcie przycisku "Stop Recording"
+        /// <summary>
+        /// Stop recording exercise movment pattern
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void StopRecordingButton_Click(object sender, RoutedEventArgs e)
         {
             isRecording = false;
@@ -359,6 +378,11 @@ namespace Microsoft.Samples.Kinect.BodyBasics
             //     MessageBox.Show("No frames recorded.");
             // }
         }
+        /// <summary>
+        /// Start exercise
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private async void StartExerciseButton_Click(object sender, RoutedEventArgs e)
         {
             for (int i = 5; i > 0; i--)
@@ -368,38 +392,121 @@ namespace Microsoft.Samples.Kinect.BodyBasics
             }
             isExercise = true;
             StatusText = "Exercise started";
+            exercicseStartTimestamp = DateTime.Now;
         }
+        /// <summary>
+        /// Stop exercise
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void StopExerciseButton_Click(object sender, RoutedEventArgs e)
         {
             isExercise = false;
             StatusText = "Exercise ended";
+            SaveValidationResults();
         }
 
-        // public List<Body[]> GetRecordedFrames(string filePath)
-        // {
-        //     List<Body[]> patternFrames = new List<Body[]>();
-        //     using (StreamReader sr = new StreamReader(filePath))
-        //     {
-        //         string line;
-        //         while ((line = sr.ReadLine()) != null && (line = sr.ReadLine() != "#")
-        //         {
-        //             string[] jointData = line.Split(';');
-        //             JointType jointType = (JointType)Enum.Parse(typeof(JointType), jointData[0]);
-        //             CameraSpacePoint position = new CameraSpacePoint
-        //             {
-        //                 X = float.Parse(jointData[1]),
-        //                 Y = float.Parse(jointData[2]),
-        //                 Z = float.Parse(jointData[3])
-        //             };
-        //         }
-        //     }
-        //     
-        //
-        //
-        //
-        // return patternFrames;
-        //     
-        // }
+        /// <summary>
+        /// Calculate ratio between user's arm length and saved pattern
+        /// </summary>
+        /// <param name="patternFrames"></param>
+        /// <param name="userFrames"></param>
+        /// <returns>
+        /// float
+        /// </returns>
+        public float PatternScale(List<MovementPatternFrame> patternFrames, List<Body> userFrames)
+        {
+            // Skala domyślna
+            float scale = 1;
+            float averagePatternLength = 0;
+            List<float> patternLengths = new List<float>();
+
+            // Pomiar długości średniej pomiędzy wybranymi jointami dla wzorca
+            foreach (var frame in patternFrames)
+            {
+                CameraSpacePoint position1 = frame.GetJointPosition(JointType.ShoulderRight);
+                CameraSpacePoint position2 = frame.GetJointPosition(JointType.ElbowRight);
+
+                float length = (float)Math.Sqrt(
+                    Math.Pow(position2.X - position1.X, 2) +
+                    Math.Pow(position2.Y - position1.Y, 2) +
+                    Math.Pow(position2.Z - position1.Z, 2)
+                );
+
+                patternLengths.Add(length);
+            }
+
+            // Obliczanie średniej długości dla wzorca
+            if (patternLengths.Count > 0)
+            {
+                averagePatternLength = 0;
+                foreach (float length in patternLengths)
+                {
+                    averagePatternLength += length;
+                }
+                averagePatternLength /= patternLengths.Count;
+            }
+
+            // Pomiar długości średniej pomiędzy wybranymi jointami dla użytkownika
+            float averageUserLength = 0;
+            List<float> userLengths = new List<float>();
+
+            foreach (var body in userFrames)
+            {
+                if (body.Joints.ContainsKey(JointType.ShoulderRight) && body.Joints.ContainsKey(JointType.ElbowRight))
+                {
+                    CameraSpacePoint position1 = body.Joints[JointType.ShoulderRight].Position;
+                    CameraSpacePoint position2 = body.Joints[JointType.ElbowRight].Position;
+
+                    float length = (float)Math.Sqrt(
+                        Math.Pow(position2.X - position1.X, 2) +
+                        Math.Pow(position2.Y - position1.Y, 2) +
+                        Math.Pow(position2.Z - position1.Z, 2)
+                    );
+
+                    userLengths.Add(length);
+                }
+            }
+
+            // Obliczanie średniej długości dla użytkownika
+            if (userLengths.Count > 0)
+            {
+                averageUserLength = 0;
+                foreach (float length in userLengths)
+                {
+                    averageUserLength += length;
+                }
+                averageUserLength /= userLengths.Count;
+            }
+
+            // Obliczanie skali jako stosunek średniej długości użytkownika do średniej długości wzorca
+            if (averagePatternLength != 0)
+            {
+                scale = averageUserLength / averagePatternLength;
+            }
+
+            return scale;
+        }
+        /// <summary>
+        /// Scale loaded movment pattern
+        /// </summary>
+        /// <param name="scale"></param>
+        public void ScaleMovmentPattern(float scale)
+        {
+            List<MovementPatternFrame> scaledRecordedPattern = new List<MovementPatternFrame>();
+            foreach (var frame in recordedFrames)
+            {
+                
+            }
+        }
+        
+        /// <summary>
+        /// Load saves pattern from file
+        /// </summary>
+        /// <param name="filePath"></param>
+        /// <returns>
+        /// List<MovementPatternFrame>
+        /// </returns>
         public List<MovementPatternFrame> GetRecordedFrames(string filePath)
         {
             List<MovementPatternFrame> patternFrames = new List<MovementPatternFrame>();
@@ -407,21 +514,21 @@ namespace Microsoft.Samples.Kinect.BodyBasics
             using (StreamReader sr = new StreamReader(filePath))
             {
                 string line;
-                MovementPatternFrame currentFrame = new MovementPatternFrame();
+                Dictionary<JointType, CameraSpacePoint> currentFrameJoints = new Dictionary<JointType, CameraSpacePoint>();
+                DateTime currentTimestamp = DateTime.MinValue;
 
                 while ((line = sr.ReadLine()) != null)
                 {
                     if (line == "#")
                     {
-                        // Add the current frame to the list
-                        patternFrames.Add(currentFrame);
-                
-                        // Create a new frame for the next data
-                        currentFrame = new MovementPatternFrame();
+                        if (currentFrameJoints.Count > 0)
+                        {
+                            patternFrames.Add(new MovementPatternFrame(currentFrameJoints, currentTimestamp));
+                            currentFrameJoints = new Dictionary<JointType, CameraSpacePoint>();
+                        }
                     }
                     else
                     {
-                        // Parse joint data
                         string[] jointData = line.Split(';');
                         JointType jointType = (JointType)Enum.Parse(typeof(JointType), jointData[0]);
                         //string[] positionData = jointData[1].Split(',');
@@ -431,10 +538,15 @@ namespace Microsoft.Samples.Kinect.BodyBasics
                             Y = float.Parse(jointData[2]),
                             Z = float.Parse(jointData[3])
                         };
+                        currentTimestamp = DateTime.Parse(jointData[4]);
 
-                        // Add the joint position to the current frame
-                        currentFrame.JointPositions.Add(jointType, position);
+                        currentFrameJoints[jointType] = position;
                     }
+                }
+
+                if (currentFrameJoints.Count > 0)
+                {
+                    patternFrames.Add(new MovementPatternFrame(currentFrameJoints, currentTimestamp));
                 }
             }
 
@@ -442,38 +554,8 @@ namespace Microsoft.Samples.Kinect.BodyBasics
         }
 
 
-        
-        // private List<Body[]> LoadPatternData(string filePath)
-        // {
-        //     List<Body[]> patternFrames = new List<Body[]>();
-        //     using (StreamReader sr = new StreamReader(filePath))
-        //     {
-        //         string line;
-        //         while ((line = sr.ReadLine()) != null)
-        //         {
-        //             // Assuming each line in the CSV represents joint data for one frame
-        //             string[] parts = line.Split(',');
-        //             Body[] bodies = new Body[1]; // Assuming one body for simplicity
-        //             Body body = new Body();
-        //             bodies[0] = body;
-        //
-        //             foreach (string part in parts)
-        //             {
-        //                 string[] jointData = part.Split(' '); // Assuming space-separated joint data
-        //                 JointType jointType = (JointType)Enum.Parse(typeof(JointType), jointData[0]);
-        //                 CameraSpacePoint position = new CameraSpacePoint
-        //                 {
-        //                     X = float.Parse(jointData[1]),
-        //                     Y = float.Parse(jointData[2]),
-        //                     Z = float.Parse(jointData[3])
-        //                 };
-        //                 body.Joints[jointType] = new Joint { Position = position };
-        //             }
-        //             patternFrames.Add(bodies);
-        //         }
-        //     }
-        //     return patternFrames;
-        // }
+
+
 
         /// <summary>
         /// Save joints information to csv file
@@ -483,27 +565,18 @@ namespace Microsoft.Samples.Kinect.BodyBasics
         {
             using (StreamWriter sw = new StreamWriter(outputFilePath, true))
             {
-                
+                DateTime timestamp = DateTime.Now;
+
                 foreach (var joint in body.Joints)
                 {
-                    if (joint.Key == JointType.ElbowRight || 
-                           joint.Key == JointType.HandRight || 
-                           joint.Key == JointType.ShoulderRight || 
-                           joint.Key == JointType.ThumbRight || 
-                           joint.Key == JointType.WristRight || 
-                           joint.Key == JointType.HandTipRight)
-                    {
-                        CameraSpacePoint position = joint.Value.Position;
-                        string line = string.Format("{0};{1};{2};{3}", joint.Key, position.X, position.Y, position.Z);
-                        sw.WriteLine(line);
-                        
-                    }
-                    
+                    JointType jointType = joint.Key;
+                    CameraSpacePoint position = joint.Value.Position;
+                    sw.WriteLine($"{jointType};{position.X};{position.Y};{position.Z};{timestamp}");
                 }
-                string separator = "#";
-                sw.WriteLine(separator);
+                sw.WriteLine("#");
             }
         }
+
         /// <summary>
         /// Handles the body frame data arriving from the sensor
         /// </summary>
@@ -512,6 +585,7 @@ namespace Microsoft.Samples.Kinect.BodyBasics
         private void Reader_FrameArrived(object sender, BodyFrameArrivedEventArgs e)
         {
             bool dataReceived = false;
+            
 
             using (BodyFrame bodyFrame = e.FrameReference.AcquireFrame())
             {
@@ -531,48 +605,53 @@ namespace Microsoft.Samples.Kinect.BodyBasics
                         {
                             if (body != null && body.IsTracked)
                             {
-                                
-                                
                                 SaveJointDataToFile(body);
                             }
                         }
-                        
-                        // for (int i = 0; i < this.bodies.Length; i++)
-                        // {
-                        //     if (this.bodies[i] != null)
-                        //     {
-                        //         bodiesCopy[i] = MainWindow.DeepClone(this.bodies[i]); // Poprawne wywołanie metody DeepClone
-                        //     }
-                        // }
-                        //
-                        // recordedFrames.Add(bodiesCopy);
-
-                        // // Stop recording if the maximum number of frames is reached
-                        // if (recordedFrames.Count >= maxFramesToRecord)
-                        // {
-                        //     StopRecording();
-                        // }
                     }
                 }
             }
 
             if (dataReceived)
             {
+                if (isExercise)
+                {
+                    if (recordedFrames == null || recordedFrames.Count == 0)
+                    {
+                        recordedFrames = GetRecordedFrames(outputFilePath);
+                        
+                    }
+                    // Oblicz skalę na podstawie wzorców ruchu i ramek użytkownika
+                    float scale = PatternScale(recordedFrames, this.bodies.ToList());
+                    // Get the current timestamp
+                    DateTime currentTimestamp = DateTime.Now;
+
+                    // Find the closest recorded frame to the current time
+                    closestPatternFrame = FindClosestFrame(currentTimestamp, recordedFrames);
+
+                    if (closestPatternFrame != null)
+                    {
+                        // Scale the recorded frame
+                        //closestPatternFrame.ScaleBoneVectors(scale);
+
+                        
+                    }
+                }
+
                 using (DrawingContext dc = this.drawingGroup.Open())
                 {
                     dc.DrawRectangle(Brushes.Black, null, new Rect(0.0, 0.0, this.displayWidth, this.displayHeight));
 
-                    int penIndex = 0;
+                    int penIndex = 2;
                     foreach (Body body in this.bodies)
                     {
-                        Pen drawPen = this.bodyColors[penIndex++];
+                        Pen drawPen = this.bodyColors[penIndex];
 
                         if (body.IsTracked)
                         {
                             this.DrawClippedEdges(body, dc);
 
                             IReadOnlyDictionary<JointType, Joint> joints = body.Joints;
-
                             Dictionary<JointType, Point> jointPoints = new Dictionary<JointType, Point>();
 
                             foreach (JointType jointType in joints.Keys)
@@ -585,12 +664,21 @@ namespace Microsoft.Samples.Kinect.BodyBasics
 
                                 DepthSpacePoint depthSpacePoint = this.coordinateMapper.MapCameraPointToDepthSpace(position);
                                 jointPoints[jointType] = new Point(depthSpacePoint.X, depthSpacePoint.Y);
+                                
+                                
+                                
                             }
 
                             this.DrawBody(joints, jointPoints, dc, drawPen);
-
-                            this.DrawHand(body.HandLeftState, jointPoints[JointType.HandLeft], dc);
-                            this.DrawHand(body.HandRightState, jointPoints[JointType.HandRight], dc);
+                            //this.DrawHand(body.HandLeftState, jointPoints[JointType.HandLeft], dc);
+                            //this.DrawHand(body.HandRightState, jointPoints[JointType.HandRight], dc);
+                            if (isExercise)
+                            {
+                                ValidateMovement(body, closestPatternFrame, dc);
+                                
+                            }
+                            
+                        
                         }
                     }
 
@@ -598,6 +686,186 @@ namespace Microsoft.Samples.Kinect.BodyBasics
                 }
             }
         }
+
+        private MovementPatternFrame FindClosestFrame(DateTime currentTimestamp, List<MovementPatternFrame> patternFrames)
+        {
+            /*
+            MovementPatternFrame closestFrame = null;
+            double minDifference = double.MaxValue;
+            double timeDiff = (currentTimestamp - exercicseStartTimestamp).TotalMilliseconds;
+            DateTime patternStartTime = patternFrames.Min(frame => frame.Timestamp);
+
+            foreach (var frame in patternFrames)
+            {
+                double difference = Math.Abs((frame.Timestamp - patternStartTime).TotalMilliseconds - timeDiff);
+                if (difference < minDifference)
+                {
+                    minDifference = difference;
+                    closestFrame = frame;
+                }
+            }
+            */
+            // Sprawdzanie, czy lista nie jest pusta
+            if (patternFrames == null || patternFrames.Count == 0)
+            {
+                return null;
+            }
+
+            // Pobranie ramki o aktualnym indeksie
+            MovementPatternFrame nextFrame = patternFrames[currentFrameIndex];
+
+            // Zwiększenie indeksu do następnej ramki
+            currentFrameIndex++;
+
+            // Resetowanie indeksu, jeśli osiągnie koniec listy
+            if (currentFrameIndex >= patternFrames.Count)
+            {
+                currentFrameIndex = 0;
+            }
+
+            return nextFrame;
+        }
+
+
+
+
+        private void ValidateMovement(Body userBody, MovementPatternFrame patternFrame, DrawingContext drawingContext)
+        {
+
+            foreach (var jointType in patternFrame.BoneVectors.Keys)
+            {
+                JointType correspondingJoint = GetCorrespondingJoint(jointType);
+                if (userBody.Joints.ContainsKey(jointType) && userBody.Joints.ContainsKey(correspondingJoint))
+                {
+                    CameraSpacePoint userStartPosition = userBody.Joints[jointType].Position;
+                    CameraSpacePoint userEndPosition = userBody.Joints[correspondingJoint].Position;
+
+                    CameraSpacePoint userVector = new CameraSpacePoint
+                    {
+                        X = userEndPosition.X - userStartPosition.X,
+                        Y = userEndPosition.Y - userStartPosition.Y,
+                        Z = userEndPosition.Z - userStartPosition.Z
+                    };
+
+                    CameraSpacePoint patternVector = patternFrame.BoneVectors[jointType];
+
+                    float tolerance = 0.05f; //5cm
+                    // Rysowanie wektora użytkownika
+                    /*DepthSpacePoint userStartDepthPoint = this.coordinateMapper.MapCameraPointToDepthSpace(userStartPosition);
+                    DepthSpacePoint userEndDepthPoint = this.coordinateMapper.MapCameraPointToDepthSpace(new CameraSpacePoint
+                    {
+                        X = userStartPosition.X + userVector.X,
+                        Y = userStartPosition.Y + userVector.Y,
+                        Z = userStartPosition.Z + userVector.Z
+                    });
+
+                    Pen userPen = new Pen(Brushes.Red, 3);
+                    drawingContext.DrawLine(userPen, new Point(userStartDepthPoint.X, userStartDepthPoint.Y), new Point(userEndDepthPoint.X, userEndDepthPoint.Y));
+
+                    // Rysowanie wektora wzorcowego
+                    DepthSpacePoint patternEndDepthPoint = this.coordinateMapper.MapCameraPointToDepthSpace(new CameraSpacePoint
+                    {
+                        X = userStartPosition.X + patternVector.X,
+                        Y = userStartPosition.Y + patternVector.Y,
+                        Z = userStartPosition.Z + patternVector.Z
+                    });
+
+                    Pen patternPen = new Pen(Brushes.Green, 3);
+                    drawingContext.DrawLine(patternPen, new Point(userStartDepthPoint.X, userStartDepthPoint.Y), new Point(patternEndDepthPoint.X, patternEndDepthPoint.Y));
+                    */
+
+                    // Rysowanie strzałki
+                    DrawArrow(userEndPosition, userVector, patternVector, drawingContext);
+                    if (Math.Abs(userVector.X - patternVector.X) > tolerance || Math.Abs(userVector.Y - patternVector.Y) > tolerance || Math.Abs(userVector.Z - patternVector.Z) > tolerance)
+                    {
+                        // Dodanie wyniku walidacji do listy
+                        validationResults.Add($"JointType: {jointType}, UserVector: ({userVector.X}, {userVector.Y}, {userVector.Z}), PatternVector: ({patternVector.X}, {patternVector.Y}, {patternVector.Z})");
+
+                        
+                    }
+                }
+            }
+
+            
+            
+        }
+
+        // Metoda do zapisu wyników walidacji do pliku
+        private void SaveValidationResults()
+        {
+            string filePath = "ValidationResults.txt";
+
+            try
+            {
+                // Zapisz wyniki do pliku
+                File.WriteAllLines(filePath, validationResults);
+                Console.WriteLine($"Validation results saved to {filePath}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error saving validation results: {ex.Message}");
+            }
+        }
+
+        private void DrawArrow(CameraSpacePoint startPosition, CameraSpacePoint userVector, CameraSpacePoint patternVector, DrawingContext drawingContext)
+        {
+            // Rysowanie strzałki, która pokazuje kierunek, w którym użytkownik powinien się przesunąć
+            // Możemy użyć różnicy między userVector a patternVector do wyznaczenia kierunku
+
+            // Przykład rysowania strzałki na podstawie różnicy wektorów
+            CameraSpacePoint correctionVector = new CameraSpacePoint
+            {
+                X = patternVector.X - userVector.X,
+                Y = patternVector.Y - userVector.Y,
+                Z = patternVector.Z - userVector.Z
+            };
+
+            // Mapowanie pozycji do przestrzeni głębokości
+            DepthSpacePoint startDepthPoint = this.coordinateMapper.MapCameraPointToDepthSpace(startPosition);
+            DepthSpacePoint endDepthPoint = this.coordinateMapper.MapCameraPointToDepthSpace(new CameraSpacePoint
+            {
+                X = startPosition.X + correctionVector.X,
+                Y = startPosition.Y + correctionVector.Y,
+                Z = startPosition.Z + correctionVector.Z
+            });
+
+            // Utwórz pióro do rysowania linii
+            Pen drawPen = new Pen(Brushes.Red, 3);
+
+            // Rysowanie strzałki na ekranie
+            drawingContext.DrawLine(drawPen, new Point(startDepthPoint.X, startDepthPoint.Y), new Point(endDepthPoint.X, endDepthPoint.Y));
+
+            // Rysowanie końcówki strzałki
+            double arrowSize = 5; // Rozmiar końcówki strzałki
+
+            Point arrowTip = new Point(endDepthPoint.X, endDepthPoint.Y);
+            Point arrowBase1 = new Point(endDepthPoint.X - arrowSize, endDepthPoint.Y - arrowSize);
+            Point arrowBase2 = new Point(endDepthPoint.X + arrowSize, endDepthPoint.Y - arrowSize);
+
+            drawingContext.DrawLine(drawPen, arrowTip, arrowBase1);
+            drawingContext.DrawLine(drawPen, arrowTip, arrowBase2);
+        }
+
+
+        private JointType GetCorrespondingJoint(JointType jointType)
+        {
+            switch (jointType)
+            {
+                case JointType.ShoulderRight:
+                    return JointType.ElbowRight;
+                case JointType.ElbowRight:
+                    return JointType.WristRight;
+                case JointType.WristRight:
+                    return JointType.HandRight;
+                // Add more joints as needed
+                default:
+                    return jointType;
+            }
+        }
+
+       
+
+
 
         /// <summary>
         /// Draws a body
