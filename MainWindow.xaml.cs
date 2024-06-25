@@ -172,6 +172,14 @@ namespace Microsoft.Samples.Kinect.BodyBasics
         private int currentFrameIndex = 0;
         
         private int frameCouter = 0;
+        private string email;
+        private string userId;
+        
+        private string projectId = "rehabease-df1d9";
+        private string jsonPath = "C:\\Users\\jan\\Documents\\Kinect\\BodyBasics-WPF\\rehabease-df1d9-firebase-adminsdk-ux3l8-7890449181.json";
+        private string collectionPath = "users";
+
+        private FirestoreService firestoreService;
 
         /// <summary>
         /// Initializes a new instance of the MainWindow class.
@@ -262,6 +270,9 @@ namespace Microsoft.Samples.Kinect.BodyBasics
 
             // initialize the components (controls) of the window
             this.InitializeComponent();
+            
+            firestoreService = new FirestoreService(projectId, jsonPath);
+
         }
 
         /// <summary>
@@ -395,17 +406,71 @@ namespace Microsoft.Samples.Kinect.BodyBasics
 
         private async Task StartExercise()
         {
-            for (int i = 5; i > 0; i--)
+            if (email != null || userId != null)
             {
-                StatusText = $"Exercise will start in {i} seconds";
-                await Task.Delay(1000);
+                for (int i = 5; i > 0; i--)
+                {
+                    StatusText = $"Exercise will start in {i} seconds";
+                    await Task.Delay(1000);
+                }
+                isExercise = true;
+                StatusText = "Exercise started";
+                exercicseStartTimestamp = DateTime.UtcNow;
+                validationResults = new List<string>();
+                frameCouter = 0;
             }
-            isExercise = true;
-            StatusText = "Exercise started";
-            exercicseStartTimestamp = DateTime.UtcNow;
-            validationResults = new List<string>();
-            frameCouter = 0;
+            else
+            {
+                StatusText = "Enter email to start excercise";
+            }
+            
         }
+        
+        private async void ConfirmEmailButton_Click(object sender, RoutedEventArgs e)
+        {
+            string email = EmailTextBox.Text;
+            if (IsValidEmail(email))
+            {
+                var userId = await firestoreService.GetUserIdByEmailAsync(collectionPath, email);
+                if (userId != null)
+                {
+                    StatusText = $"Email is valid. User ID: {userId}";
+                    //MessageBox.Show($"Email is valid. User ID: {userId}");
+                    this.email = email;
+                    this.userId = userId;
+                }
+                else
+                {
+                    StatusText = "Email is not found in the database.";
+                    //MessageBox.Show("Email is not found in the database.");
+                    this.email = null;
+                    this.userId = null;
+                }
+            }
+            else
+            {
+                StatusText = "Invalid email format.";
+                this.email = null;
+                this.userId = null;
+                //MessageBox.Show("Invalid email format.");
+            }
+        }
+
+        private bool IsValidEmail(string email)
+        {
+            try
+            {
+                var addr = new System.Net.Mail.MailAddress(email);
+                return addr.Address == email;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+    
+
+        
         /// <summary>
         /// Stop exercise
         /// </summary>
@@ -418,35 +483,31 @@ namespace Microsoft.Samples.Kinect.BodyBasics
         
         private async Task EndExercise()
         {
-            isExercise = false;
-            StatusText = "Exercise ended";
-            SaveValidationResults();
-
-            // Tworzenie instancji klasy ExerciseValidator
-            ExerciseValidator validator = new ExerciseValidator(exercicseStartTimestamp, frameCouter, validationResults);
-            ExerciseSummary summary = validator.GenerateExerciseSummary();
-
-            Console.WriteLine(JsonConvert.SerializeObject(summary, Formatting.Indented));
-
-            string projectId = "rehabease-df1d9";
-            string jsonPath = "C:\\Users\\jan\\Documents\\Kinect\\BodyBasics-WPF\\rehabease-df1d9-firebase-adminsdk-ux3l8-7890449181.json";
-            string collectionPath = "users";
-
-            var firestoreService = new FirestoreService(projectId, jsonPath);
-
-            string userId = await firestoreService.GetUserIdByEmailAsync(collectionPath, "admin@gmail.com");
-
-            if (userId != null)
+            try
             {
-                Console.WriteLine($"User ID for email 'admin@gmail.com': {userId}");
-            }
-            else
-            {
-                Console.WriteLine(Properties.Resources.MainWindow_EndExercise_User_with_specified_email_not_found_);
-            }
+                isExercise = false;
+                StatusText = "Exercise ended";
+                SaveValidationResults();
 
-            await firestoreService.SaveTrainingResultAsync(summary, userId);
-            Console.WriteLine("Saved");
+                // Tworzenie instancji klasy ExerciseValidator
+                ExerciseValidator validator = new ExerciseValidator(exercicseStartTimestamp, frameCouter, validationResults);
+                ExerciseSummary summary = validator.GenerateExerciseSummary();
+                string result = JsonConvert.SerializeObject(summary, Formatting.Indented);
+
+                StatusText = "Saving results";
+                await firestoreService.SaveTrainingResultAsync(summary, userId);
+        
+                StatusText = "Saved";
+        
+                // Wyświetlanie wyników w osobnym oknie
+                MessageBox.Show(result, "Exercise Summary", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                // Obsługa błędów
+                StatusText = "An error occurred while ending the exercise.";
+                MessageBox.Show($"An error occurred: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
 
