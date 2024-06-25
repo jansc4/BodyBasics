@@ -22,6 +22,9 @@ namespace Microsoft.Samples.Kinect.BodyBasics
     using System.Windows.Media;
     using System.Windows.Media.Imaging;
     using Microsoft.Kinect;
+    using System.Collections.Generic;
+    using System.Linq;
+    using Newtonsoft.Json;
 
     /// <summary>
     /// Interaction logic for MainWindow
@@ -167,6 +170,8 @@ namespace Microsoft.Samples.Kinect.BodyBasics
         private List<string> validationResults = new List<string>();
         
         private int currentFrameIndex = 0;
+        
+        private int frameCouter = 0;
 
         /// <summary>
         /// Initializes a new instance of the MainWindow class.
@@ -385,6 +390,11 @@ namespace Microsoft.Samples.Kinect.BodyBasics
         /// <param name="e"></param>
         private async void StartExerciseButton_Click(object sender, RoutedEventArgs e)
         {
+            await StartExercise();
+        }
+
+        private async Task StartExercise()
+        {
             for (int i = 5; i > 0; i--)
             {
                 StatusText = $"Exercise will start in {i} seconds";
@@ -392,7 +402,9 @@ namespace Microsoft.Samples.Kinect.BodyBasics
             }
             isExercise = true;
             StatusText = "Exercise started";
-            exercicseStartTimestamp = DateTime.Now;
+            exercicseStartTimestamp = DateTime.UtcNow;
+            validationResults = new List<string>();
+            frameCouter = 0;
         }
         /// <summary>
         /// Stop exercise
@@ -401,10 +413,43 @@ namespace Microsoft.Samples.Kinect.BodyBasics
         /// <param name="e"></param>
         private void StopExerciseButton_Click(object sender, RoutedEventArgs e)
         {
+            EndExercise();
+        }
+        
+        private async Task EndExercise()
+        {
             isExercise = false;
             StatusText = "Exercise ended";
             SaveValidationResults();
+
+            // Tworzenie instancji klasy ExerciseValidator
+            ExerciseValidator validator = new ExerciseValidator(exercicseStartTimestamp, frameCouter, validationResults);
+            ExerciseSummary summary = validator.GenerateExerciseSummary();
+
+            Console.WriteLine(JsonConvert.SerializeObject(summary, Formatting.Indented));
+
+            string projectId = "rehabease-df1d9";
+            string jsonPath = "C:\\Users\\jan\\Documents\\Kinect\\BodyBasics-WPF\\rehabease-df1d9-firebase-adminsdk-ux3l8-7890449181.json";
+            string collectionPath = "users";
+
+            var firestoreService = new FirestoreService(projectId, jsonPath);
+
+            string userId = await firestoreService.GetUserIdByEmailAsync(collectionPath, "admin@gmail.com");
+
+            if (userId != null)
+            {
+                Console.WriteLine($"User ID for email 'admin@gmail.com': {userId}");
+            }
+            else
+            {
+                Console.WriteLine(Properties.Resources.MainWindow_EndExercise_User_with_specified_email_not_found_);
+            }
+
+            await firestoreService.SaveTrainingResultAsync(summary, userId);
+            Console.WriteLine("Saved");
         }
+
+
 
         /// <summary>
         /// Calculate ratio between user's arm length and saved pattern
@@ -625,17 +670,24 @@ namespace Microsoft.Samples.Kinect.BodyBasics
                     float scale = PatternScale(recordedFrames, this.bodies.ToList());
                     // Get the current timestamp
                     DateTime currentTimestamp = DateTime.Now;
-
-                    // Find the closest recorded frame to the current time
-                    closestPatternFrame = FindClosestFrame(currentTimestamp, recordedFrames);
-
-                    if (closestPatternFrame != null)
+                    try
                     {
-                        // Scale the recorded frame
-                        //closestPatternFrame.ScaleBoneVectors(scale);
+                        // Find the closest recorded frame to the current time
+                        closestPatternFrame = FindClosestFrame(currentTimestamp, recordedFrames);
+
+                        if (closestPatternFrame != null)
+                        {
+                            // Scale the recorded frame
+                            //closestPatternFrame.ScaleBoneVectors(scale);
 
                         
+                        }
+                    } catch (EndOfExerciseException ex)
+                    {
+                        //Console.WriteLine(ex.Message);
+                        EndExercise();
                     }
+                    
                 }
 
                 using (DrawingContext dc = this.drawingGroup.Open())
@@ -720,7 +772,7 @@ namespace Microsoft.Samples.Kinect.BodyBasics
             // Resetowanie indeksu, jeśli osiągnie koniec listy
             if (currentFrameIndex >= patternFrames.Count)
             {
-                currentFrameIndex = 0;
+                throw new EndOfExerciseException("End of exercise pattern frames.");
             }
 
             return nextFrame;
@@ -731,63 +783,100 @@ namespace Microsoft.Samples.Kinect.BodyBasics
 
         private void ValidateMovement(Body userBody, MovementPatternFrame patternFrame, DrawingContext drawingContext)
         {
-
-            foreach (var jointType in patternFrame.BoneVectors.Keys)
+            try
             {
-                JointType correspondingJoint = GetCorrespondingJoint(jointType);
-                if (userBody.Joints.ContainsKey(jointType) && userBody.Joints.ContainsKey(correspondingJoint))
+                foreach (var jointType in patternFrame.BoneVectors.Keys)
                 {
-                    CameraSpacePoint userStartPosition = userBody.Joints[jointType].Position;
-                    CameraSpacePoint userEndPosition = userBody.Joints[correspondingJoint].Position;
-
-                    CameraSpacePoint userVector = new CameraSpacePoint
+                    JointType correspondingJoint = GetCorrespondingJoint(jointType);
+                    if (userBody.Joints.ContainsKey(jointType) && userBody.Joints.ContainsKey(correspondingJoint))
                     {
-                        X = userEndPosition.X - userStartPosition.X,
-                        Y = userEndPosition.Y - userStartPosition.Y,
-                        Z = userEndPosition.Z - userStartPosition.Z
-                    };
+                        CameraSpacePoint userStartPosition = userBody.Joints[jointType].Position;
+                        CameraSpacePoint userEndPosition = userBody.Joints[correspondingJoint].Position;
 
-                    CameraSpacePoint patternVector = patternFrame.BoneVectors[jointType];
+                        CameraSpacePoint userVector = new CameraSpacePoint
+                        {
+                            X = userEndPosition.X - userStartPosition.X,
+                            Y = userEndPosition.Y - userStartPosition.Y,
+                            Z = userEndPosition.Z - userStartPosition.Z
+                        };
 
-                    float tolerance = 0.05f; //5cm
-                    // Rysowanie wektora użytkownika
-                    /*DepthSpacePoint userStartDepthPoint = this.coordinateMapper.MapCameraPointToDepthSpace(userStartPosition);
-                    DepthSpacePoint userEndDepthPoint = this.coordinateMapper.MapCameraPointToDepthSpace(new CameraSpacePoint
-                    {
-                        X = userStartPosition.X + userVector.X,
-                        Y = userStartPosition.Y + userVector.Y,
-                        Z = userStartPosition.Z + userVector.Z
-                    });
+                        CameraSpacePoint patternVector = patternFrame.BoneVectors[jointType];
 
-                    Pen userPen = new Pen(Brushes.Red, 3);
-                    drawingContext.DrawLine(userPen, new Point(userStartDepthPoint.X, userStartDepthPoint.Y), new Point(userEndDepthPoint.X, userEndDepthPoint.Y));
+                        float tolerance = 0.07f; //7cm
+                        // Rysowanie wektora użytkownika
+                        /*DepthSpacePoint userStartDepthPoint = this.coordinateMapper.MapCameraPointToDepthSpace(userStartPosition);
+                        DepthSpacePoint userEndDepthPoint = this.coordinateMapper.MapCameraPointToDepthSpace(new CameraSpacePoint
+                        {
+                            X = userStartPosition.X + userVector.X,
+                            Y = userStartPosition.Y + userVector.Y,
+                            Z = userStartPosition.Z + userVector.Z
+                        });
 
-                    // Rysowanie wektora wzorcowego
-                    DepthSpacePoint patternEndDepthPoint = this.coordinateMapper.MapCameraPointToDepthSpace(new CameraSpacePoint
-                    {
-                        X = userStartPosition.X + patternVector.X,
-                        Y = userStartPosition.Y + patternVector.Y,
-                        Z = userStartPosition.Z + patternVector.Z
-                    });
+                        Pen userPen = new Pen(Brushes.Red, 3);
+                        drawingContext.DrawLine(userPen, new Point(userStartDepthPoint.X, userStartDepthPoint.Y), new Point(userEndDepthPoint.X, userEndDepthPoint.Y));
 
-                    Pen patternPen = new Pen(Brushes.Green, 3);
-                    drawingContext.DrawLine(patternPen, new Point(userStartDepthPoint.X, userStartDepthPoint.Y), new Point(patternEndDepthPoint.X, patternEndDepthPoint.Y));
-                    */
+                        // Rysowanie wektora wzorcowego
+                        DepthSpacePoint patternEndDepthPoint = this.coordinateMapper.MapCameraPointToDepthSpace(new CameraSpacePoint
+                        {
+                            X = userStartPosition.X + patternVector.X,
+                            Y = userStartPosition.Y + patternVector.Y,
+                            Z = userStartPosition.Z + patternVector.Z
+                        });
 
-                    // Rysowanie strzałki
-                    DrawArrow(userEndPosition, userVector, patternVector, drawingContext);
-                    if (Math.Abs(userVector.X - patternVector.X) > tolerance || Math.Abs(userVector.Y - patternVector.Y) > tolerance || Math.Abs(userVector.Z - patternVector.Z) > tolerance)
-                    {
-                        // Dodanie wyniku walidacji do listy
-                        validationResults.Add($"JointType: {jointType}, UserVector: ({userVector.X}, {userVector.Y}, {userVector.Z}), PatternVector: ({patternVector.X}, {patternVector.Y}, {patternVector.Z})");
+                        Pen patternPen = new Pen(Brushes.Green, 3);
+                        drawingContext.DrawLine(patternPen, new Point(userStartDepthPoint.X, userStartDepthPoint.Y), new Point(patternEndDepthPoint.X, patternEndDepthPoint.Y));
+                        */
 
-                        
+                        // Obliczanie różnicy w osi Z
+                        float zDifference = userVector.Z - patternVector.Z;
+
+                        // Wybór koloru na podstawie różnicy w osi Z
+                        Brush jointIndicatorBrush;
+                        if (Math.Abs(zDifference) <= tolerance)
+                        {
+                            jointIndicatorBrush = Brushes.Green;
+                        }
+                        else if (zDifference > tolerance)
+                        {
+                            jointIndicatorBrush = Brushes.Blue;
+                        }
+                        else
+                        {
+                            jointIndicatorBrush = Brushes.Red;
+                        }
+
+                        // Rysowanie indykatora na stawie
+                        DepthSpacePoint userStartDepthPoint =
+                            this.coordinateMapper.MapCameraPointToDepthSpace(userStartPosition);
+                        drawingContext.DrawEllipse(jointIndicatorBrush, null,
+                            new Point(userStartDepthPoint.X, userStartDepthPoint.Y), 10, 10);
+
+
+
+                        frameCouter++;
+                        // Rysowanie strzałki
+                        DrawArrow(userEndPosition, userVector, patternVector, drawingContext);
+                        if (Math.Abs(userVector.X - patternVector.X) > tolerance ||
+                            Math.Abs(userVector.Y - patternVector.Y) > tolerance ||
+                            Math.Abs(userVector.Z - patternVector.Z) > tolerance)
+                        {
+                            // Dodanie wyniku walidacji do listy
+                            validationResults.Add(
+                                $"JointType: {jointType}, UserVector: ({userVector.X}, {userVector.Y}, {userVector.Z}), PatternVector: ({patternVector.X}, {patternVector.Y}, {patternVector.Z})");
+
+
+                        }
                     }
                 }
             }
+            catch (EndOfExerciseException ex)
 
-            
-            
+            {
+                //Console.WriteLine(ex.Message);
+                EndExercise(); // Metoda kończąca ćwiczenie
+            }
+
+
         }
 
         // Metoda do zapisu wyników walidacji do pliku

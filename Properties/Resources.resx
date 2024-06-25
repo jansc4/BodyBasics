@@ -129,4 +129,7 @@
   <data name="SensorNotAvailableStatusText" xml:space="preserve">
     <value>Kinect not available!</value>
   </data>
+  <data name="MainWindow_EndExercise_User_with_specified_email_not_found_" xml:space="preserve">
+    <value>User with specified email not found.</value>
+  </data>
 </root>
